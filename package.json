@@ -1,0 +1,17 @@
+{
+  "name": "hls-proxy-vercel",
+  "version": "1.0.0",
+  "description": "HLS Proxy menggunakan Vercel Edge Functions",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "vercel build",
+    "deploy": "vercel --prod"
+  },
+  "keywords": ["hls", "proxy", "vercel", "edge-functions"],
+  "author": "govoet",
+  "license": "MIT",
+  "devDependencies": {
+    "vercel": "^33.0.0"
+  }
+}
