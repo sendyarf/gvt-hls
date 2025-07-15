@@ -2,17 +2,15 @@
   "name": "hls-proxy-vercel",
   "version": "1.0.0",
   "description": "HLS Proxy for 957001.tv using Vercel",
-  "main": "index.js",
+  "main": "api/proxy.js",
   "scripts": {
     "dev": "vercel dev",
-    "build": "echo 'Build complete'",
-    "start": "vercel dev"
+    "build": "echo 'Build complete'"
   },
   "keywords": ["hls", "proxy", "vercel", "streaming"],
   "author": "Your Name",
   "license": "MIT",
-  "dependencies": {},
-  "devDependencies": {
-    "vercel": "^33.0.0"
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
