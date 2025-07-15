@@ -3,13 +3,13 @@
     "builds": [
       {
         "src": "api/proxy.js",
-        "use": "@vercel/node"
+        "use": "@vercel/node@3.0.0"
       }
     ],
     "routes": [
       {
         "src": "/(.*)",
-        "dest": "/api/proxy.js"
+        "dest": "/api/proxy"
       }
     ]
   }
