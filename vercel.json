@@ -7,7 +7,7 @@
     "rewrites": [
       {
         "source": "/proxy/(.*)",
-        "destination": "/api/proxy"
+        "destination": "/api/proxy?path=$1"
       }
     ],
     "headers": [
@@ -24,7 +24,7 @@
           },
           {
             "key": "Access-Control-Allow-Headers",
-            "value": "Content-Type, User-Agent, Range, If-None-Match"
+            "value": "Content-Type, User-Agent, Range, If-None-Match, X-Target-Domain"
           }
         ]
       }

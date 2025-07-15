@@ -1,6 +1,5 @@
 /**
  * Vercel Edge Function untuk HLS Proxy
- * URL: https://your-project.vercel.app/api/proxy
  */
 
 // HLS origin domains
@@ -84,7 +83,8 @@ const HLS_ORIGIN_DOMAINS = [
     // Skip validation untuk development
     const isDevelopment = url.hostname.includes('localhost') || 
                          url.hostname.includes('127.0.0.1') ||
-                         url.hostname.includes('vercel.app');
+                         url.hostname.includes('vercel.app') ||
+                         url.hostname.includes('vercel.dev');
     
     if (!isDevelopment && !validReferer && !validOrigin) {
       return new Response("Access denied: Domain not authorized", {
