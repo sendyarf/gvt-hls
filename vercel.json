@@ -1,7 +1,7 @@
 {
     "functions": {
       "api/proxy.js": {
-        "runtime": "edge"
+        "maxDuration": 60
       }
     },
     "rewrites": [
@@ -24,7 +24,7 @@
           },
           {
             "key": "Access-Control-Allow-Headers",
-            "value": "Content-Type, User-Agent, Range, If-None-Match, X-Target-Domain"
+            "value": "Content-Type, User-Agent, If-Modified-Since, Cache-Control, Range, If-None-Match"
           }
         ]
       }

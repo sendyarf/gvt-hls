@@ -1,8 +1,14 @@
+// api/proxy.js
 /**
- * Vercel Edge Function untuk HLS Proxy
+ * =================================================================================
+ * HLS Proxy Vercel Function untuk 957001.tv
+ * =================================================================================
+ * 
+ * Target: pl20.chinefore.com dan domain serupa
+ * Website: www.957001.tv / play.957001.tv
  */
 
-// HLS origin domains
+// HLS origin domains untuk 957001.tv
 const HLS_ORIGIN_DOMAINS = [
     "pl20.chinefore.com",
     "pl10.chinefore.com",
@@ -12,59 +18,58 @@ const HLS_ORIGIN_DOMAINS = [
     "pl25.chinefore.com"
   ];
   
-  // Valid referer dan origin
+  // Valid referer dan origin untuk 957001.tv
   const VALID_REFERER = "https://play.957001.tv/";
   const VALID_ORIGIN = "https://play.957001.tv";
   
-  // Whitelist domain yang diizinkan
+  // Whitelist domain yang diizinkan mengakses HLS
   const ALLOWED_DOMAINS = [
     "957001.tv",
     "play.957001.tv",
     "librani.govoet.my.id",
+    // Tambahkan domain Anda sendiri di sini
     "hls.govoet.my.id",
     "kilatpink.blogspot.com",
     "librani0.blogspot.com",
-    "list-govoet.blogspot.com",
-    "localhost",
-    "127.0.0.1"
+    "list-govoet.blogspot.com"
   ];
   
-  export default async function handler(request) {
-    const url = new URL(request.url);
+  export default async function handler(req, res) {
+    const { method, url, headers, query } = req;
+    const requestUrl = new URL(url, `https://${req.headers.host}`);
+    
+    // Handle path parameter dari rewrite rule
+    const pathParam = query.path;
+    if (pathParam) {
+      // Reconstruct URL dengan path parameter
+      const decodedPath = decodeURIComponent(pathParam);
+      requestUrl.pathname = '/' + decodedPath;
+    }
     
     // --- DOMAIN DETECTION ---
     let targetDomain = null;
     
-    // Method 1: Query parameter
-    const domainParam = url.searchParams.get('domain');
+    // Method 1: Gunakan query parameter untuk specify domain
+    const domainParam = requestUrl.searchParams.get('domain');
     if (domainParam && HLS_ORIGIN_DOMAINS.includes(domainParam)) {
       targetDomain = domainParam;
     }
     
-    // Method 2: Header atau default
+    // Method 2: Auto-detect berdasarkan path atau default
     if (!targetDomain) {
-      const targetHeader = request.headers.get('X-Target-Domain');
-      if (targetHeader && HLS_ORIGIN_DOMAINS.includes(targetHeader)) {
-        targetDomain = targetHeader;
+      // Auto-detect berdasarkan pattern di path atau gunakan default
+      if (requestUrl.pathname.includes('/live/')) {
+        targetDomain = "pl20.chinefore.com"; // Default untuk live streams
       } else {
-        targetDomain = "pl20.chinefore.com"; // Default
+        targetDomain = HLS_ORIGIN_DOMAINS[0]; // Default ke domain pertama
       }
     }
     
-    // --- PATH EXTRACTION ---
-    // Extract path dari URL: /api/proxy/path/to/file.m3u8
-    const pathMatch = url.pathname.match(/^\/api\/proxy\/(.*)$/);
-    let targetPath = pathMatch ? pathMatch[1] : '';
+    // --- DOMAIN RESTRICTION CHECK ---
+    const referer = headers.referer;
+    const origin = headers.origin;
     
-    // Jika tidak ada path, coba dari query parameter
-    if (!targetPath) {
-      targetPath = url.searchParams.get('path') || '';
-    }
-    
-    // --- DOMAIN VALIDATION ---
-    const referer = request.headers.get("Referer");
-    const origin = request.headers.get("Origin");
-    
+    // Function untuk check domain
     const isAllowedDomain = (urlString) => {
       if (!urlString) return false;
       try {
@@ -77,145 +82,192 @@ const HLS_ORIGIN_DOMAINS = [
       }
     };
     
+    // Validasi domain - harus ada salah satu dari referer atau origin yang valid
     const validReferer = isAllowedDomain(referer);
     const validOrigin = isAllowedDomain(origin);
     
-    // Skip validation untuk development
-    const isDevelopment = url.hostname.includes('localhost') || 
-                         url.hostname.includes('127.0.0.1') ||
-                         url.hostname.includes('vercel.app') ||
-                         url.hostname.includes('vercel.dev');
-    
-    if (!isDevelopment && !validReferer && !validOrigin) {
-      return new Response("Access denied: Domain not authorized", {
-        status: 403,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*'
-        }
+    if (!validReferer && !validOrigin) {
+      return res.status(403).json({
+        error: "Access denied: Domain not authorized"
       });
     }
     
-    // CORS origin
+    // Determine CORS origin untuk response
     const corsOrigin = (validOrigin && origin) ? origin : 
                       (validReferer && referer) ? new URL(referer).origin : 
                       '*';
     
-    // Handle preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 200,
-        headers: {
-          'Access-Control-Allow-Origin': corsOrigin,
-          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, User-Agent, Range, If-None-Match, X-Target-Domain',
-          'Access-Control-Max-Age': '86400'
-        }
-      });
+    // Handle preflight CORS request
+    if (method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, User-Agent, If-Modified-Since, Cache-Control, Range, If-None-Match');
+      res.setHeader('Access-Control-Max-Age', '86400');
+      res.setHeader('Vary', 'Origin');
+      return res.status(200).end();
+    }
+  
+    // --- BUILD ORIGIN REQUEST ---
+    const originUrl = `https://${targetDomain}${requestUrl.pathname}${requestUrl.search}`;
+    
+    // --- SETUP HEADERS BERDASARKAN REQUEST 957001.TV ---
+    const requestHeaders = {
+      "Host": targetDomain,
+      "Accept": "*/*",
+      "Accept-Encoding": "gzip, deflate, br, zstd",
+      "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+      "Connection": "keep-alive",
+      "Origin": VALID_ORIGIN,
+      "Referer": VALID_REFERER,
+      "Sec-CH-UA": '"Not)A;Brand";v="8", "Chromium";v="138", "Microsoft Edge";v="138"',
+      "Sec-CH-UA-Mobile": "?0",
+      "Sec-CH-UA-Platform": '"Windows"',
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "cross-site",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0"
+    };
+    
+    // Copy conditional headers jika ada
+    if (headers["if-modified-since"]) {
+      requestHeaders["If-Modified-Since"] = headers["if-modified-since"];
     }
     
-    // --- BUILD TARGET URL ---
-    const targetUrl = `https://${targetDomain}/${targetPath}${url.search}`;
+    if (headers["if-none-match"]) {
+      requestHeaders["If-None-Match"] = headers["if-none-match"];
+    }
     
-    // --- SETUP HEADERS ---
-    const requestHeaders = new Headers();
-    requestHeaders.set("Host", targetDomain);
-    requestHeaders.set("Accept", "*/*");
-    requestHeaders.set("Accept-Encoding", "gzip, deflate, br");
-    requestHeaders.set("Accept-Language", "en-US,en;q=0.9,id;q=0.8");
-    requestHeaders.set("Connection", "keep-alive");
-    requestHeaders.set("Origin", VALID_ORIGIN);
-    requestHeaders.set("Referer", VALID_REFERER);
-    requestHeaders.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    if (headers["range"]) {
+      requestHeaders["Range"] = headers["range"];
+    }
     
-    // Copy conditional headers
-    ['If-Modified-Since', 'If-None-Match', 'Range', 'Cache-Control'].forEach(header => {
-      const value = request.headers.get(header);
-      if (value) requestHeaders.set(header, value);
-    });
-    
+    if (headers["cache-control"]) {
+      requestHeaders["Cache-Control"] = headers["cache-control"];
+    }
+  
     try {
-      const response = await fetch(targetUrl, {
-        method: request.method,
-        headers: requestHeaders
+      const originResponse = await fetch(originUrl, {
+        method: method,
+        headers: requestHeaders,
+        redirect: 'follow'
       });
       
-      if (!response.ok) {
-        return new Response(`Target server error: ${response.status}`, {
-          status: response.status,
-          headers: {
-            'Access-Control-Allow-Origin': corsOrigin,
-            'Content-Type': 'text/plain'
-          }
-        });
+      // Log untuk debugging
+      console.log(`Request to: ${originUrl}`);
+      console.log(`Response status: ${originResponse.status}`);
+      
+      // Jika server menolak, return response asli dengan CORS
+      if (!originResponse.ok) {
+        const errorText = await originResponse.text();
+        console.log(`Error response: ${errorText}`);
+        
+        res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        res.setHeader('Content-Type', originResponse.headers.get('Content-Type') || 'text/plain');
+        res.setHeader('Vary', 'Origin');
+        
+        return res.status(originResponse.status).send(errorText);
+      }
+  
+      // Setup response headers
+      const responseHeaders = {};
+      
+      // Copy headers dari response asli, skip yang tidak perlu
+      for (const [key, value] of originResponse.headers) {
+        const lowerKey = key.toLowerCase();
+        if (!lowerKey.startsWith('cf-') && 
+            !lowerKey.startsWith('x-') && 
+            lowerKey !== 'server' &&
+            lowerKey !== 'via' &&
+            lowerKey !== 'eagleid' &&
+            lowerKey !== 'x-cache' &&
+            lowerKey !== 'x-swift-cachetime' &&
+            lowerKey !== 'x-swift-savetime' &&
+            lowerKey !== 'x-tengine-type') {
+          responseHeaders[key] = value;
+        }
       }
       
-      // Setup response headers
-      const responseHeaders = new Headers();
+      // Set CORS headers
+      responseHeaders["Access-Control-Allow-Origin"] = corsOrigin;
+      responseHeaders["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
+      responseHeaders["Access-Control-Allow-Headers"] = "Content-Type, User-Agent, If-Modified-Since, Cache-Control, Range, If-None-Match";
+      responseHeaders["Access-Control-Expose-Headers"] = "Date, Content-Type, Content-Length, Cache-Control, Expires, Last-Modified, ETag";
+      responseHeaders["Vary"] = "Origin";
+      responseHeaders["Timing-Allow-Origin"] = "*";
       
-      // Copy important headers
-      ['Content-Type', 'Content-Length', 'Cache-Control', 'Expires', 'Last-Modified', 'ETag'].forEach(header => {
-        const value = response.headers.get(header);
-        if (value) responseHeaders.set(header, value);
+      // Set response headers
+      Object.entries(responseHeaders).forEach(([key, value]) => {
+        res.setHeader(key, value);
       });
       
-      // CORS headers
-      responseHeaders.set("Access-Control-Allow-Origin", corsOrigin);
-      responseHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-      responseHeaders.set("Access-Control-Expose-Headers", "Content-Length, Content-Type, Cache-Control, Expires, Last-Modified, ETag");
+      const contentType = originResponse.headers.get("Content-Type") || "";
       
-      const contentType = response.headers.get("Content-Type") || "";
-      
-      // Handle HLS playlist
+      // Handle HLS playlist files
       if (contentType.includes("mpegurl") || 
           contentType.includes("m3u8") || 
-          targetPath.includes('.m3u8')) {
+          contentType.includes("application/x-mpegURL") ||
+          requestUrl.pathname.includes('.m3u8')) {
         
-        const originalText = await response.text();
+        const originalText = await originResponse.text();
         
-        // Modify URLs in playlist
+        console.log("Processing HLS playlist for 957001.tv");
+        console.log("Original content length:", originalText.length);
+        console.log("Content preview:", originalText.substring(0, 200));
+        
+        // Modify URLs dalam playlist
         const modifiedText = originalText.replace(
-          /^(?!#)(?!https?:\/\/)(.+)$/gm,
+          /^(?!#)(?!https?:\/\/)(.+)$/gm, 
           (match, path) => {
             const trimmedPath = path.trim();
             
+            // Skip empty lines atau yang sudah absolute URL
             if (!trimmedPath || trimmedPath.startsWith('http')) {
               return match;
             }
             
-            // Build proxy URL
-            const proxyBase = `https://${url.hostname}/api/proxy`;
-            const queryParams = new URLSearchParams();
-            queryParams.set('domain', targetDomain);
-            
-            if (trimmedPath.startsWith('/')) {
-              return `${proxyBase}${trimmedPath}?${queryParams.toString()}`;
-            } else {
-              const basePath = targetPath.substring(0, targetPath.lastIndexOf('/') + 1);
-              return `${proxyBase}/${basePath}${trimmedPath}?${queryParams.toString()}`;
+            // Handle media segments (.ts, .m4s, .m3u8)
+            if (trimmedPath.includes('.ts') || 
+                trimmedPath.includes('.m4s') || 
+                trimmedPath.includes('.m3u8') ||
+                trimmedPath.includes('.mp4')) {
+              
+              // Preserve semua query parameters
+              const queryString = requestUrl.search;
+              
+              if (trimmedPath.startsWith('/')) {
+                // Absolute path
+                return `https://${req.headers.host}/api/proxy${trimmedPath}${queryString}`;
+              } else {
+                // Relative path
+                const basePath = requestUrl.pathname.substring(0, requestUrl.pathname.lastIndexOf('/') + 1);
+                return `https://${req.headers.host}/api/proxy${basePath}${trimmedPath}${queryString}`;
+              }
             }
+            
+            return match;
           }
         );
         
-        return new Response(modifiedText, {
-          status: response.status,
-          headers: responseHeaders
-        });
+        console.log("Modified content length:", modifiedText.length);
+        
+        return res.status(originResponse.status).send(modifiedText);
+      } else {
+        // Handle media segments dan file lainnya
+        const arrayBuffer = await originResponse.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        return res.status(originResponse.status).send(buffer);
       }
       
-      // Handle media files
-      return new Response(response.body, {
-        status: response.status,
-        headers: responseHeaders
-      });
-      
     } catch (error) {
-      return new Response(`Proxy Error: ${error.message}`, {
-        status: 502,
-        headers: {
-          'Access-Control-Allow-Origin': corsOrigin,
-          'Content-Type': 'text/plain'
-        }
-      });
+      console.error("Vercel Function Error:", error);
+      console.error("Failed URL:", originUrl);
+      
+      res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Vary', 'Origin');
+      
+      return res.status(502).send(`Proxy Error: ${error.message}`);
     }
   }
